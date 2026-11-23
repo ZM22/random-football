@@ -1,10 +1,11 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import FootballPitch from '@/components/FootballPitch';
+
 
 type Player = {
   id: string;
@@ -20,11 +21,18 @@ type Player = {
   dribbling: number | null;
   defending: number | null;
   physical: number | null;
+  gk_diving: number | null;
+  gk_handling: number | null;
+  gk_kicking: number | null;
+  gk_reflexes: number | null;
+  gk_speed: number | null;
+  gk_positioning: number | null;
   teamName: string;
   teamId: string;
 };
 
-export default function DraftPage() {
+function DraftContent() {
+  const supabase = createClient();
   const searchParams = useSearchParams();
 
   const nationalId = searchParams.get('national');
@@ -744,5 +752,13 @@ teamName: teamMap.get(link.team_id) ?? 'Команда',
       </>
 )}
     </main>
+  );
+}
+
+export default function DraftPage() {
+  return (
+    <Suspense fallback={<main>Загрузка драфта...</main>}>
+      <DraftContent />
+    </Suspense>
   );
 }

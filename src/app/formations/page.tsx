@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import FormationPreview from '@/components/FormationPreview';
@@ -14,7 +14,7 @@ type Formation = {
   is_active: boolean;
 };
 
-export default function FormationsPage() {
+function FormationsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [formations, setFormations] = useState<Formation[]>([]);
@@ -124,5 +124,13 @@ export default function FormationsPage() {
         <span>Исторические футбольные легенды</span>
       </footer>
     </main>
+  );
+}
+
+export default function FormationsPage() {
+  return (
+    <Suspense fallback={<main>Загрузка схем...</main>}>
+      <FormationsContent />
+    </Suspense>
   );
 }
