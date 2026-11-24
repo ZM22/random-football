@@ -48,6 +48,7 @@ function DraftContent() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [teamNames, setTeamNames] = useState<string[]>([]);
   const [selected, setSelected] = useState<Record<number, Player>>({});
+  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [candidates, setCandidates] = useState<(Player | null)[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,6 +75,15 @@ function DraftContent() {
 
       const savedSelected = parsed.selected ?? {};
       const savedCandidates = parsed.candidates ?? [];
+      
+      const savedSeenIds: string[] = parsed.seenIds ?? [
+  ...new Set(
+    [
+      ...Object.values(savedSelected),
+      ...savedCandidates.filter(Boolean),
+    ].map((player: any) => player.id)
+  ),
+];
 
       const allSavedPlayers = [
         ...Object.values(savedSelected),
@@ -124,6 +134,7 @@ function DraftContent() {
 
       setSelected(refreshedSelected);
       setCandidates(refreshedCandidates);
+      setSeenIds(new Set(savedSeenIds));
 
       setActiveSlot(
         typeof parsed.activeSlot === 'number'
@@ -148,13 +159,14 @@ useEffect(() => {
   if (!isRestored) return;
 
   const draftData = {
-    selected,
-    candidates,
-    activeSlot,
-  };
+  selected,
+  candidates,
+  activeSlot,
+  seenIds: Array.from(seenIds),
+};
 
   localStorage.setItem(storageKey, JSON.stringify(draftData));
-}, [selected, candidates, activeSlot, isRestored, storageKey]);
+}, [selected, candidates, activeSlot, seenIds, isRestored, storageKey]);
 
   useEffect(() => {
     async function loadDraftData() {
@@ -370,9 +382,10 @@ teamName: teamMap.get(link.team_id) ?? 'Команда',
       const teamPlayer = players.filter(
         (player) =>
           player.teamId === teamId &&
-          player.position === position &&
-          !usedIds.has(player.id) &&
-          !addedIds.has(player.id)
+player.position === position &&
+!usedIds.has(player.id) &&
+!seenIds.has(player.id) &&
+!addedIds.has(player.id)
       );
 
       const randomPlayer =
@@ -388,7 +401,18 @@ teamName: teamMap.get(link.team_id) ?? 'Команда',
     });
 
     setCandidates(available);
-    setActiveSlot(index);
+
+setSeenIds((previous) => {
+  const next = new Set(previous);
+
+  available.forEach((player) => {
+    if (player) next.add(player.id);
+  });
+
+  return next;
+});
+
+setActiveSlot(index);
   }
 
   function choosePlayer(player: Player) {
