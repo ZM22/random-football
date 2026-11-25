@@ -51,7 +51,7 @@ function FormationsContent() {
           <span className="ball">⚽</span>
           <span>RANDOM <b>FOOTBALL</b></span>
         </div>
-        <span className="tag">ШАГ 2 / 2</span>
+        
       </header>
 
       <section className="hero">
@@ -109,7 +109,7 @@ function FormationsContent() {
   const params = new URLSearchParams(searchParams.toString());
   params.set('formation', selected);
 
-  router.push(`/draft?${params.toString()}`);
+  router.replace(`/draft?${params.toString()}`);
 }}
               >
                 Подтвердить схему ↗

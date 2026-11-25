@@ -1,11 +1,12 @@
 
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState, useRef } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import FootballPitch from '@/components/FootballPitch';
-
+import { toPng } from 'html-to-image';
+import { calculateFormationChemistry } from '@/lib/chemistry';
 
 type Player = {
   id: string;
@@ -29,11 +30,22 @@ type Player = {
   gk_positioning: number | null;
   teamName: string;
   teamId: string;
+  teamKind: string;
+  teamCountryCode: string | null;
+  teamLogoUrl: string | null;
+  nationality: string | null;
+  teams: {
+    teamId: string;
+    teamKind: string;
+    relationship: string;
+    leagueId: string | null;
+  }[];
 };
 
 function DraftContent() {
   const supabase = createClient();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const nationalId = searchParams.get('national');
   const favoriteId = searchParams.get('favorite');
@@ -51,122 +63,19 @@ function DraftContent() {
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [candidates, setCandidates] = useState<(Player | null)[]>([]);
+  const [replacementAvailable, setReplacementAvailable] = useState(true);
+  const [replacementMode, setReplacementMode] = useState(false);
+  const [replacementInfoOpen, setReplacementInfoOpen] = useState(false);
+  const [revealedCards, setRevealedCards] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [isRestored, setIsRestored] = useState(false);
-  const [showFullSquad, setShowFullSquad] = useState(false);
+  const [showFullSquad, setShowFullSquad] = useState(
+  searchParams.get('complete') === '1'
+);
+
+  const squadImageRef = useRef<HTMLDivElement | null>(null);
+  const [squadName, setSquadName] = useState('');
   const [viewedPlayerIndex, setViewedPlayerIndex] = useState<number | null>(null);
-
- useEffect(() => {
-  if (loading) return;
-
-  let cancelled = false;
-
-  const restoreDraft = async () => {
-    try {
-      const savedDraft = localStorage.getItem(storageKey);
-
-      if (!savedDraft) {
-        if (!cancelled) setIsRestored(true);
-        return;
-      }
-
-      const parsed = JSON.parse(savedDraft);
-
-      const savedSelected = parsed.selected ?? {};
-      const savedCandidates = parsed.candidates ?? [];
-      
-      const savedSeenIds: string[] = parsed.seenIds ?? [
-  ...new Set(
-    [
-      ...Object.values(savedSelected),
-      ...savedCandidates.filter(Boolean),
-    ].map((player: any) => player.id)
-  ),
-];
-
-      const allSavedPlayers = [
-        ...Object.values(savedSelected),
-        ...savedCandidates.filter(Boolean),
-      ] as any[];
-
-      const playerIds = [
-        ...new Set(allSavedPlayers.map((player) => player.id)),
-      ];
-
-      let freshPlayers: any[] = [];
-
-      if (playerIds.length > 0) {
-        const { data, error } = await supabase
-          .from('players')
-          .select('id, full_name, known_as, photo_url, card_type')
-          .in('id', playerIds);
-
-        if (error) throw error;
-
-        freshPlayers = data ?? [];
-      }
-
-      if (cancelled) return;
-
-      const freshPlayersMap = new Map(
-        freshPlayers.map((player) => [player.id, player])
-      );
-
-      const refreshPlayer = (player: any) => {
-        if (!player) return player;
-
-        const fresh = freshPlayersMap.get(player.id);
-
-        return fresh
-          ? { ...player, ...fresh }
-          : player;
-      };
-
-      const refreshedSelected = Object.fromEntries(
-        Object.entries(savedSelected).map(([index, player]) => [
-          index,
-          refreshPlayer(player),
-        ])
-      );
-
-      const refreshedCandidates = savedCandidates.map(refreshPlayer);
-
-      setSelected(refreshedSelected);
-      setCandidates(refreshedCandidates);
-      setSeenIds(new Set(savedSeenIds));
-
-      setActiveSlot(
-        typeof parsed.activeSlot === 'number'
-          ? parsed.activeSlot
-          : null
-      );
-    } catch (error) {
-      console.error('Не удалось восстановить драфт:', error);
-    } finally {
-      if (!cancelled) setIsRestored(true);
-    }
-  };
-
-  restoreDraft();
-
-  return () => {
-    cancelled = true;
-  };
-}, [loading, storageKey]);
-
-useEffect(() => {
-  if (!isRestored) return;
-
-  const draftData = {
-  selected,
-  candidates,
-  activeSlot,
-  seenIds: Array.from(seenIds),
-};
-
-  localStorage.setItem(storageKey, JSON.stringify(draftData));
-}, [selected, candidates, activeSlot, seenIds, isRestored, storageKey]);
 
   useEffect(() => {
     async function loadDraftData() {
@@ -195,7 +104,7 @@ useEffect(() => {
 
       const { data: teams, error: teamsError } = await supabase
         .from('teams')
-        .select('id, name')
+        .select('id, name, kind, country_code, logo_url')
         .in('id', teamIds);
 
       if (teamsError) {
@@ -230,7 +139,7 @@ useEffect(() => {
       ] = await Promise.all([
         supabase
           .from('players')
-	  .select('id, full_name, known_as, photo_url, card_type')
+	  .select('id, full_name, known_as, photo_url, card_type, nationality')
           .in('id', playerIds),
         supabase
           .from('player_positions')
@@ -268,6 +177,67 @@ useEffect(() => {
         setLoading(false);
         return;
       }
+      
+// Загружаем всю историю команд игроков
+const { data: historyLinks, error: historyLinksError } = await supabase
+  .from('player_teams')
+  .select('player_id, team_id, relationship')
+  .in('player_id', playerIds);
+
+if (historyLinksError) {
+  setError(historyLinksError.message);
+  setLoading(false);
+  return;
+}
+
+const historyTeamIds = [
+  ...new Set((historyLinks ?? []).map((item) => item.team_id)),
+];
+
+const { data: historyTeams, error: historyTeamsError } =
+  historyTeamIds.length > 0
+    ? await supabase
+        .from('teams')
+        .select('id, kind, league_id')
+        .in('id', historyTeamIds)
+    : { data: [], error: null };
+
+if (historyTeamsError) {
+  setError(historyTeamsError.message);
+  setLoading(false);
+  return;
+}
+
+const historyTeamMap = new Map(
+  (historyTeams ?? []).map((team) => [team.id, team])
+);
+
+const chemistryTeamsMap = new Map<
+  string,
+  {
+    teamId: string;
+    teamKind: string;
+    relationship: string;
+    leagueId: string | null;
+  }[]
+>();
+
+(historyLinks ?? []).forEach((link) => {
+  const team = historyTeamMap.get(link.team_id);
+
+  if (!team) return;
+
+  const current = chemistryTeamsMap.get(link.player_id) ?? [];
+
+  current.push({
+    teamId: link.team_id,
+    teamKind: team.kind,
+    relationship: link.relationship,
+    leagueId: team.league_id,
+  });
+
+  chemistryTeamsMap.set(link.player_id, current);
+});
 
       const positionMap = new Map<string, string[]>();
       positionData?.forEach((item) => {
@@ -296,7 +266,7 @@ const statsMap = new Map<
 >();
 
 ratingData?.forEach((item) => {
-  if (item.is_peak && item.overall !== null) {
+  if (item.overall !== null) {
     const current = ratingMap.get(item.player_id);
 
     if (current === undefined || item.overall > current) {
@@ -320,9 +290,9 @@ ratingData?.forEach((item) => {
   });
 });
 
-      const teamMap = new Map(
-        teams?.map((team) => [team.id, team.name]) ?? []
-      );
+     const teamMap = new Map(
+  teams?.map((team) => [team.id, team]) ?? []
+);
 
       const loadedPlayers: Player[] = [];
 
@@ -337,8 +307,10 @@ ratingData?.forEach((item) => {
 
         playerPositions.forEach((position) => {
           loadedPlayers.push({
-            ...player,
-            position,
+  ...player,
+  nationality: player.nationality,
+  teams: chemistryTeamsMap.get(player.id) ?? [],
+  position,
 overall: ratingMap.get(player.id) ?? null,
 pace: statsMap.get(player.id)?.pace ?? null,
 shooting: statsMap.get(player.id)?.shooting ?? null,
@@ -352,8 +324,11 @@ gk_kicking: statsMap.get(player.id)?.gk_kicking ?? null,
 gk_reflexes: statsMap.get(player.id)?.gk_reflexes ?? null,
 gk_speed: statsMap.get(player.id)?.gk_speed ?? null,
 gk_positioning: statsMap.get(player.id)?.gk_positioning ?? null,
-teamName: teamMap.get(link.team_id) ?? 'Команда',
-            teamId: link.team_id,
+teamName: teamMap.get(link.team_id)?.name ?? 'Команда',
+teamId: link.team_id,
+teamKind: teamMap.get(link.team_id)?.kind ?? '',
+teamCountryCode: teamMap.get(link.team_id)?.country_code ?? null,
+teamLogoUrl: teamMap.get(link.team_id)?.logo_url ?? null,
           });
         });
       });
@@ -368,12 +343,19 @@ teamName: teamMap.get(link.team_id) ?? 'Команда',
 
   function openSlot(index: number) {
     if (activeSlot !== null) return;
-    if (selected[index]) return;
+
+if (replacementMode) {
+  if (!selected[index]) return;
+} else {
+  if (selected[index]) return;
+}
 
     const position = positions[index];
     const usedIds = new Set(
-      Object.values(selected).map((player) => player.id)
-    );
+  Object.entries(selected)
+    .filter(([slot]) => !replacementMode || Number(slot) !== index)
+    .map(([, player]) => player.id)
+);
 
     const available: (Player | null)[] = [];
     const addedIds = new Set<string>();
@@ -388,10 +370,46 @@ player.position === position &&
 !addedIds.has(player.id)
       );
 
-      const randomPlayer =
-        teamPlayer.length > 0
-          ? teamPlayer[Math.floor(Math.random() * teamPlayer.length)]
-          : null;
+      const randomPlayer = (() => {
+  if (teamPlayer.length === 0) return null;
+
+  const weights = replacementMode
+  ? {
+      gold: (90 / 98) * 90,
+      special: (8 / 98) * 90,
+      icon: 10,
+    }
+  : {
+      gold: 90,
+      special: 8,
+      icon: 2,
+    };
+
+  const availableTypes = [
+    ...new Set(teamPlayer.map((player) => player.card_type)),
+  ];
+
+  const totalWeight = availableTypes.reduce(
+    (sum, type) => sum + weights[type],
+    0
+  );
+
+  let roll = Math.random() * totalWeight;
+
+  const selectedType =
+    availableTypes.find((type) => {
+      roll -= weights[type];
+      return roll < 0;
+    }) ?? availableTypes[0];
+
+  const playersOfType = teamPlayer.filter(
+    (player) => player.card_type === selectedType
+  );
+
+  return playersOfType[
+    Math.floor(Math.random() * playersOfType.length)
+  ] ?? null;
+})();
 
       if (randomPlayer) {
         addedIds.add(randomPlayer.id);
@@ -401,7 +419,8 @@ player.position === position &&
     });
 
     setCandidates(available);
-
+    setRevealedCards([]);
+   
 setSeenIds((previous) => {
   const next = new Set(previous);
 
@@ -415,16 +434,52 @@ setSeenIds((previous) => {
 setActiveSlot(index);
   }
 
-  function choosePlayer(player: Player) {
-    if (activeSlot === null) return;
+    function revealCard(index: number) {
+  setRevealedCards((previous) =>
+    previous.includes(index) ? previous : [...previous, index]
+  );
+}  
 
-    setSelected((previous) => ({
-      ...previous,
-      [activeSlot]: player,
-    }));
+    function choosePlayer(player: Player) {
+  if (activeSlot === null) return;
 
-    setActiveSlot(null);
+  setSelected((previous) => ({
+    ...previous,
+    [activeSlot]: player,
+  }));
+
+  if (replacementMode) {
+    setReplacementAvailable(false);
+    setReplacementMode(false);
   }
+
+  setActiveSlot(null);
+}
+
+function createNewDraft() {
+  localStorage.removeItem(storageKey);
+  setSquadName('');
+  window.location.href = '/';
+}
+
+async function saveDraft() {
+  if (!squadImageRef.current) return;
+
+  try {
+    const dataUrl = await toPng(squadImageRef.current, {
+      cacheBust: true,
+      pixelRatio: 2,
+    });
+
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = 'random-football-draft.png';
+    link.click();
+  } catch (error) {
+    console.error('Ошибка сохранения команды:', error);
+    alert('Не удалось сохранить изображение команды.');
+  }
+}
 
   const selectedCount = Object.keys(selected).length;
   const fullSquadPlayers = Object.fromEntries(
@@ -457,7 +512,8 @@ setActiveSlot(index);
     ? selected[viewedPlayerIndex]
     : null;
 
-  const [isDraftComplete, setIsDraftComplete] = useState(false);
+
+const [isDraftComplete, setIsDraftComplete] = useState(false);
 
   const averageRating =
   selectedCount === 11
@@ -469,29 +525,62 @@ setActiveSlot(index);
       )
     : 0;
 
+const {
+  score: chemistryScore,
+  maxScore: chemistryMaxScore,
+  pairs: chemistryPairs,
+} = calculateFormationChemistry(formationCode, selected);
+
   return (
     <main className="shell">
     {showFullSquad ? (
   <section className="full-squad-screen">
+
+  {/* Здесь весь существующий состав */}
+
+  <div className="squad-image-content">
+
+  <div className="replacement-panel">
+  <button
+    type="button"
+    className={`replacement-button ${replacementAvailable ? '' : 'used'}`}
+    disabled={!replacementAvailable || replacementMode || activeSlot !== null}
+    onClick={() => setReplacementInfoOpen(true)}
+  >
+    ДОСТУПНА ОДНА ЗАМЕНА КАРТОЧКИ
+  </button>
+</div>
+
+<div className="full-squad-layout">
+  <div ref={squadImageRef} className="squad-export">
     <p className="eyebrow">RANDOM FOOTBALL</p>
-    <h1>ТВОЯ КОМАНДА</h1>
+    <h1>{squadName.trim() || 'ТВОЯ КОМАНДА'}</h1>
+    <div className="squad-export-rating">
+  РЕЙТИНГ КОМАНДЫ: {averageRating}
+</div>
 
-    <div className="finish-rating">
-      <span>ОБЩИЙ РЕЙТИНГ</span>
-      <strong>{averageRating}</strong>
-    </div>
+<div className="squad-export-rating">
+  ХИМИЯ КОМАНДЫ: {chemistryScore} / {chemistryMaxScore}
+</div>
 
-    <div className="full-squad-layout">
   <div className="full-squad-pitch">
     <FootballPitch
+      chemistryPairs={chemistryPairs}
       formation={formationCode}
       positions={positions}
       selected={fullSquadPlayers}
-      onSelect={(index) => setViewedPlayerIndex(index)}
+      onSelect={(index) => {
+  if (replacementMode) {
+    openSlot(index);
+  } else {
+    setViewedPlayerIndex(index);
+  }
+}}
       viewMode={true}
     />
+    </div>
   </div>
-
+  <div className="full-squad-sidebar">
   <aside className={`player-details ${viewedPlayer ? 'active' : ''}`}>
     {viewedPlayer ? (
       <>
@@ -549,15 +638,28 @@ setActiveSlot(index);
         <p>Нажми на карточку игрока на поле, чтобы посмотреть его характеристики</p>
       </div>
     )}
-  </aside>
-</div>
-              
+    </aside>
+
+  <div className="finish-actions">
     <button
       className="finish-button"
-      onClick={() => setShowFullSquad(false)}
+      disabled={replacementMode || activeSlot !== null}
+      onClick={saveDraft}
     >
-      ВЕРНУТЬСЯ К ДРАФТУ
+      СОХРАНИТЬ ДРАФТ
     </button>
+
+    <button
+      className="finish-button"
+      disabled={replacementMode || activeSlot !== null}
+      onClick={createNewDraft}
+    >
+      СОЗДАТЬ НОВЫЙ ДРАФТ
+    </button>
+  </div>
+</div>
+</div>
+   </div>           
   </section>
 ) : (
   <>
@@ -599,6 +701,7 @@ setActiveSlot(index);
             </div>
 
        <FootballPitch
+  chemistryPairs={chemistryPairs}
   formation={formationCode}
   positions={positions}
   selected={Object.fromEntries(
@@ -630,7 +733,7 @@ setActiveSlot(index);
 )}
   onSelect={openSlot}
 />
-   <div className="finish-draft">
+    <div className="finish-draft">
   <button
     type="button"
     disabled={selectedCount !== 11}
@@ -647,7 +750,64 @@ setActiveSlot(index);
         )}
       </section>
 
-      {activeSlot !== null && (
+      {isDraftComplete && (
+  <div className="player-modal-backdrop">
+    <div className="player-modal">
+      <p className="eyebrow">ДРАФТ ЗАВЕРШЁН</p>
+      <h2>Твоя команда готова!</h2>
+
+      <div className="finish-rating">
+        <span>ОБЩИЙ РЕЙТИНГ</span>
+        <strong>{averageRating}</strong>
+      </div>
+
+      <div className="finish-rating">
+  <span>ХИМИЯ КОМАНДЫ</span>
+  <strong>{chemistryScore} / {chemistryMaxScore}</strong>
+</div>
+
+      <p>Ты собрал состав из 11 футболистов.</p>
+      
+<p className="squad-name-label">
+  Дай название своему составу
+</p>
+
+<input
+  className="squad-name-input"
+  type="text"
+  value={squadName}
+  onChange={(event) => setSquadName(event.target.value)}
+  placeholder="Например, GALACTICOS 2026"
+  maxLength={32}
+/>
+
+      
+<button
+  className="finish-button"
+  onClick={() => {
+  setIsDraftComplete(false);
+  setShowFullSquad(true);
+
+  const params = new URLSearchParams(searchParams.toString());
+  params.set('complete', '1');
+
+  router.replace(`/draft?${params.toString()}`);
+}}
+>
+  ПОСМОТРЕТЬ СОСТАВ
+</button>
+
+    </div>
+  </div>
+)}
+      <footer>
+        <span>RANDOM FOOTBALL © 2026</span>
+        <span>Исторические футбольные легенды</span>
+      </footer>
+      </>
+)}
+
+{activeSlot !== null && (
         <div className="player-modal-backdrop">
           <div
             className="player-modal"
@@ -661,69 +821,97 @@ setActiveSlot(index);
             </p>
 
             <div className="candidate-grid">
-              {candidates.map((player, index) => (
-                <div
-  className={`candidate-card candidate-${player?.card_type ?? 'gold'}`}
+              {candidates.map((player, index) => (             
+  <div
+  className={`candidate-card candidate-${player?.card_type ?? 'gold'} ${
+    revealedCards.includes(index) ? 'is-revealed' : ''
+  }`}
   key={`${activeSlot}-${index}`}
   style={{ animationDelay: `${index * 300}ms` }}
 >
-                  {player ? (
-                    <button
-                      className="candidate-button"
-                      onClick={() => choosePlayer(player)}
-                    >
-                      <div className="candidate-photo">
-                        {player.photo_url ? (
-                          <img src={player.photo_url} alt="" />
-                        ) : (
-                          <span>
-                            {(player.known_as || player.full_name)
-                              .slice(0, 1)
-                              .toUpperCase()}
-                          </span>
-                        )}
-                        <span className="candidate-position">
-                          {player.position}
-                        </span>
-                      </div>
+                  
+{player ? (
+  <div className="candidate-card-inner">
+    <button
+      type="button"
+      className="candidate-card-back"
+      onClick={() => revealCard(index)}
+      aria-label="Открыть карточку футболиста"
+    >
+      <span className="candidate-card-logo">RF</span>
+      <strong>RANDOM FOOTBALL</strong>
+      <span className="candidate-card-back-hint">НАЖМИ, ЧТОБЫ ОТКРЫТЬ</span>
+    </button>
 
-                      <div className="candidate-rating">
-                        {player.overall ?? '—'}
-                      </div>
+    <button
+      type="button"
+      className="candidate-button candidate-card-front"
+      onClick={() => choosePlayer(player)}
+    >
+      <div className="candidate-photo">
+        {player.photo_url ? (
+          <img src={player.photo_url} alt="" />
+        ) : (
+          <span>
+            {(player.known_as || player.full_name)
+              .slice(0, 1)
+              .toUpperCase()}
+          </span>
+        )}
+        <span className="candidate-position">
+          {player.position}
+        </span>
+      </div>
 
-                      <strong>
-                        {player.known_as || player.full_name}
-                      </strong>
+      <div className="candidate-rating">
+        {player.overall ?? '—'}
+      </div>
 
-                      <span className="candidate-team">
-                        {player.teamName}
-                      </span>
-		     
- <div className="candidate-stats">
-  {player.position === 'GK' ? (
-    <>
-      <div><b>{player.gk_diving ?? '—'}</b><span>DIV</span></div>
-      <div><b>{player.gk_handling ?? '—'}</b><span>HAN</span></div>
-      <div><b>{player.gk_kicking ?? '—'}</b><span>KIC</span></div>
-      <div><b>{player.gk_reflexes ?? '—'}</b><span>REF</span></div>
-      <div><b>{player.gk_speed ?? '—'}</b><span>SPD</span></div>
-      <div><b>{player.gk_positioning ?? '—'}</b><span>POS</span></div>
-    </>
+      <strong>{player.known_as || player.full_name}</strong>
+
+      <span className="candidate-team">
+  {player.teamKind === 'national' && player.teamCountryCode ? (
+    <img
+      src={`https://flagcdn.com/w80/${player.teamCountryCode.toLowerCase()}.png`}
+      alt={player.teamName}
+      className="candidate-team-logo"
+    />
+  ) : player.teamLogoUrl ? (
+    <img
+      src={player.teamLogoUrl}
+      alt={player.teamName}
+      className="candidate-team-logo"
+    />
   ) : (
-    <>
-      <div><b>{player.pace ?? '—'}</b><span>PAC</span></div>
-      <div><b>{player.shooting ?? '—'}</b><span>SHO</span></div>
-      <div><b>{player.passing ?? '—'}</b><span>PAS</span></div>
-      <div><b>{player.dribbling ?? '—'}</b><span>DRI</span></div>
-      <div><b>{player.defending ?? '—'}</b><span>DEF</span></div>
-      <div><b>{player.physical ?? '—'}</b><span>PHY</span></div>
-    </>
+    player.teamName
   )}
-</div>
-                      <span className="candidate-pick">
-                        ВЫБРАТЬ
-                      </span>
-                    </button>
+</span>
+
+      <div className="candidate-stats">
+        {player.position === 'GK' ? (
+          <>
+            <div><b>{player.gk_diving ?? '—'}</b><span>DIV</span></div>
+            <div><b>{player.gk_handling ?? '—'}</b><span>HAN</span></div>
+            <div><b>{player.gk_kicking ?? '—'}</b><span>KIC</span></div>
+            <div><b>{player.gk_reflexes ?? '—'}</b><span>REF</span></div>
+            <div><b>{player.gk_speed ?? '—'}</b><span>SPD</span></div>
+            <div><b>{player.gk_positioning ?? '—'}</b><span>POS</span></div>
+          </>
+        ) : (
+          <>
+            <div><b>{player.pace ?? '—'}</b><span>PAC</span></div>
+            <div><b>{player.shooting ?? '—'}</b><span>SHO</span></div>
+            <div><b>{player.passing ?? '—'}</b><span>PAS</span></div>
+            <div><b>{player.dribbling ?? '—'}</b><span>DRI</span></div>
+            <div><b>{player.defending ?? '—'}</b><span>DEF</span></div>
+            <div><b>{player.physical ?? '—'}</b><span>PHY</span></div>
+          </>
+        )}
+      </div>
+
+      <span className="candidate-pick">ВЫБРАТЬ</span>
+    </button>
+  </div>
                   ) : (
                     <div className="candidate-empty">
                       <span>?</span>
@@ -744,37 +932,29 @@ setActiveSlot(index);
           </div>
         </div>
       )}
-      {isDraftComplete && (
-  <div className="player-modal-backdrop">
-    <div className="player-modal">
-      <p className="eyebrow">ДРАФТ ЗАВЕРШЁН</p>
-      <h2>Твоя команда готова!</h2>
 
-      <div className="finish-rating">
-        <span>ОБЩИЙ РЕЙТИНГ</span>
-        <strong>{averageRating}</strong>
+{replacementInfoOpen && (
+    <div className="player-modal-backdrop">
+      <div className="player-modal replacement-modal">
+        <h2>Доступна одна замена!</h2>
+
+        <p>
+          Вы можете поменять одного игрока в составе на ваш выбор!
+        </p>
+
+        <button
+          type="button"
+          className="finish-button"
+          onClick={() => {
+            setReplacementInfoOpen(false);
+            setReplacementMode(true);
+          }}
+        >
+          ПОНЯТНО
+        </button>
       </div>
-
-      <p>Ты собрал состав из 11 футболистов.</p>
-
-      <button
-        className="finish-button"
-        onClick={() => {
-  setIsDraftComplete(false);
-  setShowFullSquad(true);
-}}
-      >
-        ПОСМОТРЕТЬ СОСТАВ
-      </button>
     </div>
-  </div>
-)}
-      <footer>
-        <span>RANDOM FOOTBALL © 2026</span>
-        <span>Исторические футбольные легенды</span>
-      </footer>
-      </>
-)}
+  )}
     </main>
   );
 }

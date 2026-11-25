@@ -30,6 +30,11 @@ type FootballPitchProps = {
   selected: Record<number, PlayerOnPitch>;
   onSelect: (index: number) => void;
   viewMode?: boolean;
+    chemistryPairs?: {
+    from: number;
+    to: number;
+    strength: number;
+  }[];
 };
 
 type Point = {
@@ -39,7 +44,7 @@ type Point = {
 
 const layouts: Record<string, Point[]> = {
  '4-3-3': [
-  { x: 50, y: 93 }, // GK
+  { x: 50, y: 90 }, // GK
 
   { x: 12, y: 68 }, // LB
   { x: 35, y: 75 }, // CB
@@ -55,7 +60,7 @@ const layouts: Record<string, Point[]> = {
   { x: 88, y: 23 }, // RW
 ],
   '4-2-3-1': [
-  { x: 50, y: 93 }, // GK
+  { x: 50, y: 90 }, // GK
 
   { x: 12, y: 68 }, // LB
   { x: 35, y: 75 }, // CB
@@ -72,7 +77,7 @@ const layouts: Record<string, Point[]> = {
   { x: 88, y: 23 }, // RW
 ],
  '4-4-2': [
-  { x: 50, y: 93 }, // GK
+  { x: 50, y: 90 }, // GK
   { x: 12, y: 68 }, // LB
   { x: 38, y: 68 }, // CB
   { x: 62, y: 68 }, // CB
@@ -85,11 +90,11 @@ const layouts: Record<string, Point[]> = {
   { x: 64, y: 19 }, // ST
 ],
   '4-3-1-2': [
-  { x: 50, y: 93 }, // GK
-  { x: 12, y: 68 }, // LB
-  { x: 38, y: 68 }, // CB
-  { x: 62, y: 68 }, // CB
-  { x: 88, y: 68 }, // RB
+  { x: 50, y: 90 }, // GK
+  { x: 10, y: 68 }, // LB
+  { x: 35, y: 75 }, // CB
+  { x: 65, y: 75 }, // CB
+  { x: 90, y: 68 }, // RB
   { x: 25, y: 49 }, // CM
   { x: 50, y: 57 }, // CM
   { x: 75, y: 49 }, // CM
@@ -98,7 +103,7 @@ const layouts: Record<string, Point[]> = {
   { x: 66, y: 14 }, // ST
 ],
   '3-5-2': [
-  { x: 50, y: 93 }, // GK
+  { x: 50, y: 90 }, // GK
   { x: 20, y: 68 }, // CB
   { x: 50, y: 68 }, // CB
   { x: 80, y: 68 }, // CB
@@ -111,7 +116,7 @@ const layouts: Record<string, Point[]> = {
   { x: 64, y: 17 }, // ST
 ],
   '4-2-2-2': [
-  { x: 50, y: 93 }, // GK
+  { x: 50, y: 90 }, // GK
   { x: 12, y: 68 }, // LB
   { x: 35, y: 72 }, // CB
   { x: 65, y: 72 }, // CB
@@ -124,7 +129,7 @@ const layouts: Record<string, Point[]> = {
   { x: 64, y: 14 }, // ST
 ],
   '4-2-1-3': [
-    { x: 50, y: 93 }, // GK
+    { x: 50, y: 90 }, // GK
     { x: 12, y: 68 }, // LB
   { x: 35, y: 72 }, // CB
   { x: 65, y: 72 }, // CB
@@ -144,6 +149,7 @@ export default function FootballPitch({
   selected,
   onSelect,
   viewMode = false,
+  chemistryPairs = [],
 }: FootballPitchProps) {
   const points = layouts[formation] ?? layouts['4-3-3'];
 
@@ -157,6 +163,50 @@ export default function FootballPitch({
         <div className="pitch-goal pitch-goal-top" />
         <div className="pitch-goal pitch-goal-bottom" />
       </div>
+      
+         <svg
+        className="chemistry-lines"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+          zIndex: 5,
+        }}
+      >
+        {chemistryPairs.map((pair) => {
+          const from = points[pair.from];
+          const to = points[pair.to];
+
+          if (!from || !to) return null;
+
+          const color =
+  pair.strength === 3
+    ? '#22c55e'
+    : pair.strength === 2
+      ? '#facc15'
+      : pair.strength === 1
+        ? '#ef4444'
+        : '#9ca3af';
+
+          return (
+            <line
+              key={`${pair.from}-${pair.to}`}
+              x1={from.x}
+              y1={from.y}
+              x2={to.x}
+              y2={to.y}
+              stroke={color}
+              strokeWidth={pair.strength === 3 ? 0.9 : 0.7}
+              strokeLinecap="round"
+              opacity={0.85}
+            />
+          );
+        })}
+      </svg>   
 
       {positions.map((position, index) => {
         const point = points[index];

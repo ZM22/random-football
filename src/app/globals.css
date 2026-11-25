@@ -377,6 +377,46 @@
   animation: modalIn .3s ease both;
 }
 
+.squad-name-label {
+  margin: 24px 0 10px;
+  color: #e8c45e;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.squad-name-input {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: 52px;
+  margin: 0 auto 28px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  border: 1px solid #a97924;
+  border-radius: 10px;
+  background: #1b2720;
+  color: #fff;
+  font-size: 16px;
+  text-align: center;
+  outline: none;
+}
+
+.squad-name-input:focus {
+  border-color: #e8c45e;
+  box-shadow: 0 0 0 2px #e8c45e33;
+}
+
+.squad-name-input::placeholder {
+  color: #89938a;
+}
+
+.finish-button {
+  display: block;
+  margin: 0 auto;
+  min-width: 240px;
+}
+
 .modal-close {
   position: absolute;
   top: 14px;
@@ -428,7 +468,6 @@
 }
 
 .candidate-button:hover {
-  transform: translateY(-8px) scale(1.025);
   border-color: var(--lime);
   box-shadow: 0 10px 30px #c7f36b22;
 }
@@ -776,11 +815,6 @@
   transition: transform .25s, box-shadow .25s;
 }
 
-.candidate-button:hover {
-  transform: translateY(-7px) scale(1.025);
-  box-shadow: 0 15px 35px #0008;
-}
-
 .candidate-gold .candidate-button {
   background:
     radial-gradient(ellipse at 50% 30%, #fff2bd, transparent 55%),
@@ -848,6 +882,17 @@
   color: #51452f;
   font-size: 12px;
   font-weight: 700;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.candidate-team-logo {
+  display: block;
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
 }
 
 .candidate-pick {
@@ -1007,6 +1052,13 @@
   cursor: pointer;
 }
 
+.finish-button:disabled {
+  background: #555;
+  color: #aaa;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .finish-draft button:disabled {
   opacity: .4;
   cursor: not-allowed;
@@ -1016,6 +1068,20 @@
   color: #aaa;
   font-size: 13px;
   margin-top: 10px;
+}
+
+.finish-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.finish-actions .finish-button {
+  width: 100%;
+  max-width: 320px;
+  min-height: 52px;
 }
 
 .finish-rating {
@@ -1361,7 +1427,7 @@
   width: 100%;
   max-width: 1100px;
   margin: 0 auto 36px;
-  padding: 20px 0;
+  padding: 0;
 }
 
 .full-squad-pitch .football-pitch {
@@ -1374,12 +1440,76 @@
 
 .full-squad-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(900px, 1fr) 300px;
   gap: 24px;
   align-items: start;
   width: 100%;
   max-width: 1400px;
   margin: 0 auto 36px;
+}
+
+.squad-export {
+  width: 100%;
+  min-width: 0;
+  padding: 24px;
+  margin: 0;
+  background: #101a17;
+  border-radius: 18px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.squad-export h1 {
+  margin: 10px 0 24px;
+  color: #e8c45e;
+}
+
+.full-squad-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  min-width: 0;
+}
+
+.replacement-panel {
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+  width: 220px;
+  padding-top: 20px;
+  margin-bottom: 12px;
+}
+
+.replacement-button {
+  width: 220px;
+  max-width: 100%;
+  padding: 16px 12px;
+  border: 1px solid #e8c45e;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #e8c45e, #a97924);
+  color: #171717;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.replacement-button:disabled,
+.replacement-button.used {
+  background: #555;
+  border-color: #666;
+  color: #aaa;
+  cursor: not-allowed;
+}
+
+.replacement-modal {
+  text-align: center;
+}
+
+.replacement-modal p {
+  margin: 20px 0 28px;
+  color: #fff;
+  line-height: 1.5;
 }
 
 .full-squad-pitch {
@@ -1388,8 +1518,7 @@
 }
 
 .player-details {
-  position: sticky;
-  top: 24px;
+  position: static;
   min-height: 500px;
   padding: 18px;
   border: 1px solid rgba(212, 175, 55, 0.35);
@@ -1493,5 +1622,157 @@
 
   .player-details-photo {
     height: 260px;
+  }
+}
+
+
+/* Flip animation for player cards */
+.candidate-card {
+  perspective: 1200px;
+}
+
+.candidate-card-inner {
+  position: relative;
+  width: 100%;
+  min-height: 340px;
+  transform-style: preserve-3d;
+  transition: transform 0.75s cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+.candidate-card.is-revealed .candidate-card-inner {
+  transform: rotateY(180deg);
+}
+
+.candidate-card-back,
+.candidate-card-front {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  box-sizing: border-box;
+}
+
+.candidate-card-back {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  border: 2px solid #d6b45a;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at center, #344b70 0%, #14233e 65%, #091326 100%);
+  color: #f5d98b;
+  cursor: pointer;
+}
+
+.candidate-card-logo {
+  display: grid;
+  place-items: center;
+  width: 82px;
+  height: 82px;
+  border: 3px solid #d6b45a;
+  border-radius: 50%;
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: -3px;
+}
+
+.candidate-card-back-hint {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #fff;
+}
+
+.candidate-card-front {
+  transform: rotateY(180deg);
+}
+
+
+/* Fix player card front layout */
+.candidate-card-inner {
+  height: 470px;
+  min-height: 470px;
+}
+.candidate-card-front {
+  height: 470px;
+  min-height: 470px;
+  transform: rotateY(180deg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.candidate-photo {
+  width: 100%;
+  height: 195px;
+  min-height: 195px;
+  flex: 0 0 195px;
+  aspect-ratio: auto;
+  overflow: hidden;
+}
+
+.candidate-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  flex-shrink: 0;
+}
+
+.candidate-rating {
+  position: relative;
+  margin-top: 8px;
+  font-size: 32px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.candidate-card-front:hover {
+  transform: rotateY(180deg);
+}
+
+.squad-export-rating {
+  margin: -12px 0 24px;
+  color: #e8c45e;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-align: center;
+}
+
+.draft .football-pitch {
+  max-width: 900px;
+}
+
+.full-squad-pitch .football-pitch {
+  max-width: 900px;
+}
+
+@media (max-width: 1100px) {
+  .full-squad-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .full-squad-sidebar {
+    width: 100%;
+  }
+
+  .player-details {
+    min-height: 300px;
+  }
+
+  .player-details-empty {
+    min-height: 300px;
+  }
+
+  .finish-actions {
+    width: 100%;
   }
 }

@@ -14,11 +14,15 @@ type Team = {
 };
 
 type TeamFieldProps = {
+  id: string;
   label: string;
   placeholder: string;
   teams: Team[];
   selected: Team | null;
   onSelect: (team: Team) => void;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
 };
 
 function TeamIcon({ team }: { team: Team }) {
@@ -53,14 +57,17 @@ function TeamIcon({ team }: { team: Team }) {
 }
 
 function TeamField({
+  id,
   label,
   placeholder,
   teams,
   selected,
   onSelect,
+  open,
+  onToggle,
+  onClose,
 }: TeamFieldProps) {
   const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -82,14 +89,15 @@ function TeamField({
         <input
           value={open ? query : selected?.name ?? query}
           placeholder={placeholder}
-          onFocus={() => {
-            setQuery('');
-            setOpen(true);
-          }}
+         onClick={() => {
+  if (!open) {
+    setQuery('');
+  }
+  onToggle();
+}}
           onChange={(event) => {
-            setQuery(event.target.value);
-            setOpen(true);
-          }}
+  setQuery(event.target.value);
+}}
         />
 
         {selected && (
@@ -97,10 +105,10 @@ function TeamField({
             type="button"
             className="ghost"
             onClick={() => {
-              setQuery('');
-              onSelect(null as unknown as Team);
-              setOpen(true);
-            }}
+  setQuery('');
+  onSelect(null as unknown as Team);
+  if (!open) onToggle();
+}}
           >
             ×
           </button>
@@ -116,10 +124,10 @@ function TeamField({
                 className="team-option"
                 key={team.id}
                 onClick={() => {
-                  onSelect(team);
-                  setQuery('');
-                  setOpen(false);
-                }}
+  onSelect(team);
+  setQuery('');
+  onClose();
+}}
               >
                 <TeamIcon team={team} />
                 <span>{team.name}</span>
@@ -134,7 +142,7 @@ function TeamField({
           <button
             type="button"
             className="team-option"
-            onClick={() => setOpen(false)}
+            onClick={onClose}
           >
             Закрыть
           </button>
@@ -150,6 +158,7 @@ export default function Home() {
   const [national, setNational] = useState<Team | null>(null);
   const [favoriteClub, setFavoriteClub] = useState<Team | null>(null);
   const [rivalClub, setRivalClub] = useState<Team | null>(null);
+  const [openTeamField, setOpenTeamField] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -212,10 +221,9 @@ export default function Home() {
       <section className="draft">
         <div className="draftHead">
           <div>
-            <p className="eyebrow">ШАГ 1 / 2</p>
             <h2>Выбор команд</h2>
           </div>
-          <div className="counter">01<span> / 02</span></div>
+      
         </div>
 
         {loading && <p>Загружаем команды...</p>}
@@ -225,32 +233,56 @@ export default function Home() {
           <>
             <div className="team-selector">
               <TeamField
-                label="1. Любимая сборная"
-                placeholder="Найти сборную..."
-                teams={nationalTeams}
-                selected={national}
-                onSelect={setNational}
-              />
+  id="national"
+  label="1. Любимая сборная"
+  placeholder="Найти сборную..."
+  teams={nationalTeams}
+  selected={national}
+  onSelect={setNational}
+  open={openTeamField === 'national'}
+  onToggle={() =>
+    setOpenTeamField((current) =>
+      current === 'national' ? null : 'national'
+    )
+  }
+  onClose={() => setOpenTeamField(null)}
+/>
 
               <TeamField
-                label="2. Любимый клуб"
-                placeholder="Найти клуб..."
-                teams={clubs.filter(
-                  (team) => team.id !== rivalClub?.id
-                )}
-                selected={favoriteClub}
-                onSelect={setFavoriteClub}
-              />
+  id="favorite"
+  label="2. Любимый клуб"
+  placeholder="Найти клуб..."
+  teams={clubs.filter(
+    (team) => team.id !== rivalClub?.id
+  )}
+  selected={favoriteClub}
+  onSelect={setFavoriteClub}
+  open={openTeamField === 'favorite'}
+  onToggle={() =>
+    setOpenTeamField((current) =>
+      current === 'favorite' ? null : 'favorite'
+    )
+  }
+  onClose={() => setOpenTeamField(null)}
+/>
 
               <TeamField
-                label="3. Клуб-соперник"
-                placeholder="Найти клуб..."
-                teams={clubs.filter(
-                  (team) => team.id !== favoriteClub?.id
-                )}
-                selected={rivalClub}
-                onSelect={setRivalClub}
-              />
+  id="rival"
+  label="3. Клуб-соперник"
+  placeholder="Найти клуб..."
+  teams={clubs.filter(
+    (team) => team.id !== favoriteClub?.id
+  )}
+  selected={rivalClub}
+  onSelect={setRivalClub}
+  open={openTeamField === 'rival'}
+  onToggle={() =>
+    setOpenTeamField((current) =>
+      current === 'rival' ? null : 'rival'
+    )
+  }
+  onClose={() => setOpenTeamField(null)}
+/>
             </div>
 
             <div className="bottomActions">
@@ -270,7 +302,7 @@ export default function Home() {
     rival: rivalClub.id,
   });
 
-  router.push(`/formations?${params.toString()}`);
+  router.replace(`/formations?${params.toString()}`);
 }}
               >
                 Начать драфт ↗
